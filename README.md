@@ -1,61 +1,60 @@
-# Ecommerce Monolith Modular
+# Ecommerce Modular Monolith
 
-Projeto **monolito modular** em **Java 17** (um único projeto Maven/Spring Boot), preparado para evoluir para microsserviços.
+A **modular monolith** project built with **Java 17** (a single Maven/Spring Boot application), designed to evolve into a microservices architecture in the future.
 
-**Diferencial deste repositório:** uso de **Redis** para recomendações colaborativas em tempo real, com histórico efêmero de visualizações — sem persistir essas associações no PostgreSQL.
+**Repository highlight:** uses **Redis** for real-time collaborative recommendations with ephemeral view history, without persisting these associations in PostgreSQL.
 
-## 🔴 Redis no projeto
+## 🔴 Redis in the Project
 
-O módulo `recommendation/` usa **Redis 7** como store de visualizações. Cada clique ou visualização de produto alimenta um **grafo bidirecional** em memória:
+The `recommendation/` module uses **Redis 7** as a view-tracking store. Every product click or view feeds a **bidirectional graph** in memory:
 
-| Chave Redis | Tipo | Conteúdo |
-|-------------|------|----------|
-| `ecommerce:views:user:{customerId}` | SET | IDs dos produtos que o cliente viu |
-| `ecommerce:views:product:{productId}` | SET | IDs dos clientes que viram o produto |
+| Redis Key                             | Type | Content                             |
+| ------------------------------------- | ---- | ----------------------------------- |
+| `ecommerce:views:user:{customerId}`   | SET  | Product IDs viewed by the customer  |
+| `ecommerce:views:product:{productId}` | SET  | Customer IDs who viewed the product |
 
-**Por que Redis aqui?**
+**Why Redis?**
 
-- Dados **efêmeros** — histórico de navegação com TTL configurável (`app.recommendation.customer-history-ttl`, padrão `30d`)
-- **Leitura e escrita rápidas** para sugestões colaborativas (quem viu X também viu Y)
-- **Sem entidade JPA** — PostgreSQL continua responsável pelos dados transacionais; Redis cuida do sinal de comportamento
+* **Ephemeral data** — browsing history with configurable TTL (`app.recommendation.customer-history-ttl`, default `30d`)
+* **Fast reads and writes** for collaborative recommendations ("users who viewed X also viewed Y")
+* **No JPA entity** — PostgreSQL remains responsible for transactional data while Redis handles behavioral signals
 
-Fluxo resumido:
+High-level flow:
 
-1. `POST /api/recommendations/customers/{id}/views` registra a visualização nos dois SETs e renova o TTL
-2. `GET /api/recommendations/customers/{id}` monta sugestões a partir do grafo no Redis
-3. Se não houver sinal suficiente, a API completa com produtos disponíveis do catálogo (PostgreSQL)
+1. `POST /api/recommendations/customers/{id}/views` records the view in both Redis SETs and refreshes the TTL
+2. `GET /api/recommendations/customers/{id}` generates recommendations from the Redis graph
+3. If there is insufficient behavioral data, the API fills the response with available catalog products from PostgreSQL
 
-### Redis Insight — visualização das chaves
+### Redis Insight — Key Visualization
 
-Conecte o [Redis Insight](https://redis.io/insight/) em `localhost:6379` e filtre por `ecommerce:views:*` para inspecionar os SETs em tempo real.
+Connect to Redis Insight at `localhost:6379` and filter by `ecommerce:views:*` to inspect the SETs in real time.
 
-Após subir a aplicação em DEV, o seed popula visualizações automaticamente — os logs indicam IDs de clientes e produtos para testar.
+After starting the application in DEV mode, the seed process automatically generates sample views. The logs display customer and product IDs that can be used for testing.
 
-<!-- Adicione sua captura de tela em docs/images/redis-insight.png -->
-![Visualização das chaves `ecommerce:views:*` no Redis Insight](docs/images/redis-insight.png)
+<img width="1266" height="789" alt="Image" src="https://github.com/user-attachments/assets/5cfb12f4-a62a-4d5d-b71b-d1821cfb0457" />
 
-> **Para incluir a foto:** salve a captura em `docs/images/redis-insight.png` (ou altere o caminho acima).
+> **To include the screenshot:** save it as `docs/images/redis-insight.png` (or update the path above).
 
-## 🧱 Estrutura (1 projeto, módulos por pacote)
+## 🧱 Structure (Single Project, Package-Based Modules)
 
-O projeto é **um único app executável** e os Bounded Contexts ficam separados por pacote dentro de `src/main/java`:
+The application runs as a **single executable application**, while Bounded Contexts are organized into separate packages under `src/main/java`:
 
-```
+```text
 src/main/java/com/ecommerce/
  ├── auth/
  ├── product/
  ├── customer/
  ├── order/
  ├── payment/
- ├── recommendation/   ← Redis (visualizações + sugestões)
+ ├── recommendation/   ← Redis (views + recommendations)
  └── shared/
 ```
 
-### Estrutura DDD dentro de cada módulo
+### DDD Structure Within Each Module
 
-Cada contexto segue:
+Each context follows the structure below:
 
-```
+```text
 module/
  ├── domain/
  │    ├── model/
@@ -72,163 +71,174 @@ module/
       └── *Request.java
 ```
 
-## 🗄️ Banco de Dados
+## 🗄️ Database
 
-### Estratégia: PostgreSQL com Schemas Separados
+### Strategy: PostgreSQL with Separate Schemas
 
-- **1 banco PostgreSQL** com schemas por contexto:
-  - `product_schema`
-  - `customer_schema`
-  - `order_schema`
-  - `payment_schema`
-  - `auth` (tabelas de usuário)
+* A single PostgreSQL database with one schema per context:
 
-### Flyway como Fonte Única de Verdade
+  * `product_schema`
+  * `customer_schema`
+  * `order_schema`
+  * `payment_schema`
+  * `auth` (user tables)
 
-Migrations em `src/main/resources/db/migration/v1/`:
-- `V1__01_create_schemas.sql`
-- `V2__create_customer_tables.sql`
-- `V3__create_product_tables.sql`
-- `V4__create_order_tables.sql`
-- `V5__create_payment_tables.sql`
-- `V6__create_auth_tables.sql`
+### Flyway as the Single Source of Truth
 
-## 🚀 Como Executar
+Migrations are located under `src/main/resources/db/migration/v1/`:
 
-### 1. Subir PostgreSQL e Redis com Docker
+* `V1__01_create_schemas.sql`
+* `V2__create_customer_tables.sql`
+* `V3__create_product_tables.sql`
+* `V4__create_order_tables.sql`
+* `V5__create_payment_tables.sql`
+* `V6__create_auth_tables.sql`
+
+## 🚀 Running the Project
+
+### 1. Start PostgreSQL and Redis with Docker
 
 ```bash
 docker-compose up -d
 ```
 
-Isso sobe:
-- **PostgreSQL** em `localhost:5432`
-- **Redis** em `localhost:6379`
-- **App** em `localhost:8080` (profile `docker`)
+This starts:
 
-Para rodar só a infra (PostgreSQL + Redis) e a app localmente:
+* **PostgreSQL** at `localhost:5432`
+* **Redis** at `localhost:6379`
+* **Application** at `localhost:8080` (using the `docker` profile)
+
+To start only the infrastructure (PostgreSQL + Redis) and run the application locally:
 
 ```bash
 docker-compose up -d postgres redis
 ```
 
-### 2. Compilar o Projeto
+### 2. Build the Project
 
 ```bash
 mvn clean install
 ```
 
-### 3. Executar a Aplicação
+### 3. Run the Application
 
 ```bash
 mvn spring-boot:run
 ```
 
-A aplicação estará disponível em: `http://localhost:8080`
+The application will be available at:
 
-Swagger UI: `http://localhost:8080/swagger-ui.html`
+```text
+http://localhost:8080
+```
 
-## 📋 Endpoints
+Swagger UI:
 
-### Recomendações (Redis)
+```text
+http://localhost:8080/swagger-ui.html
+```
 
-- `POST /api/recommendations/customers/{customerId}/views` — Registrar visualização/clique (grava no Redis)
-- `GET /api/recommendations/customers/{customerId}` — Sugestões colaborativas com base no histórico
+## 📋 API Endpoints
+
+### Recommendations (Redis)
+
+* `POST /api/recommendations/customers/{customerId}/views` — Register a product view/click (stored in Redis)
+* `GET /api/recommendations/customers/{customerId}` — Collaborative recommendations based on browsing history
 
 ### Product
 
-- `POST /api/products` - Criar produto
-- `GET /api/products/{id}` - Buscar produto
-- `GET /api/products` - Listar produtos
-- `PUT /api/products/{id}` - Atualizar produto
-- `POST /api/products/{id}/decrease-stock` - Reduzir estoque
+* `POST /api/products` — Create product
+* `GET /api/products/{id}` — Get product by ID
+* `GET /api/products` — List products
+* `PUT /api/products/{id}` — Update product
+* `POST /api/products/{id}/decrease-stock` — Decrease stock
 
 ### Customer
 
-- `POST /api/customers` - Criar cliente
-- `GET /api/customers/{id}` - Buscar cliente
-- `GET /api/customers` - Listar clientes
-- `PUT /api/customers/{id}` - Atualizar cliente
-- `DELETE /api/customers/{id}` - Desativar cliente
+* `POST /api/customers` — Create customer
+* `GET /api/customers/{id}` — Get customer by ID
+* `GET /api/customers` — List customers
+* `PUT /api/customers/{id}` — Update customer
+* `DELETE /api/customers/{id}` — Deactivate customer
 
 ### Order
 
-- `POST /api/orders` - Criar pedido
-- `GET /api/orders/{id}` - Buscar pedido
-- `GET /api/orders/customer/{customerId}` - Listar pedidos do cliente
-- `POST /api/orders/{id}/items` - Adicionar item ao pedido
-- `POST /api/orders/{id}/pay` - Pagar pedido
-- `POST /api/orders/{id}/cancel` - Cancelar pedido
+* `POST /api/orders` — Create order
+* `GET /api/orders/{id}` — Get order by ID
+* `GET /api/orders/customer/{customerId}` — List customer orders
+* `POST /api/orders/{id}/items` — Add item to order
+* `POST /api/orders/{id}/pay` — Pay order
+* `POST /api/orders/{id}/cancel` — Cancel order
 
 ### Payment
 
-- `POST /api/payments` - Criar pagamento
-- `GET /api/payments/{id}` - Buscar pagamento
-- `GET /api/payments/order/{orderId}` - Listar pagamentos do pedido
+* `POST /api/payments` — Create payment
+* `GET /api/payments/{id}` — Get payment by ID
+* `GET /api/payments/order/{orderId}` — List payments for an order
 
-## 🔄 Comunicação entre Módulos
+## 🔄 Module Communication
 
-### Atual (Monolito Modular)
+### Current State (Modular Monolith)
 
-- **Módulo `shared/`**: Classes comuns (BaseEntity, DomainEvent, BusinessException)
-- **Referências por UUID**: Cada módulo referencia outros por UUID
-- **Comunicação síncrona**: Services podem chamar outros Services diretamente
-- **Redis no `recommendation/`**: histórico de visualizações fora do PostgreSQL
+* **`shared/` module:** Common classes (`BaseEntity`, `DomainEvent`, `BusinessException`)
+* **UUID references:** Modules reference each other through UUIDs
+* **Synchronous communication:** Services can call other services directly
+* **Redis in `recommendation/`:** View history stored outside PostgreSQL
 
-### Futuro (Microsserviços)
+### Future State (Microservices)
 
-- **Eventos de domínio**: `OrderCreatedEvent`, `PaymentApprovedEvent`, etc.
-- **Message broker**: RabbitMQ/Kafka para comunicação assíncrona
-- **API Gateway**: Para comunicação síncrona entre serviços
+* **Domain events:** `OrderCreatedEvent`, `PaymentApprovedEvent`, etc.
+* **Message broker:** RabbitMQ/Kafka for asynchronous communication
+* **API Gateway:** For synchronous communication between services
 
-## 🎯 Regras de Negócio Implementadas
+## 🎯 Implemented Business Rules
 
 ### Order (Aggregate Root)
 
-- ✅ Só pode ir de `PENDING` → `PAID`
-- ✅ Nunca pode ir de `CANCELLED` → `PAID`
-- ✅ Pedido pago não pode ser cancelado
+* ✅ Can only transition from `PENDING` → `PAID`
+* ✅ Can never transition from `CANCELLED` → `PAID`
+* ✅ Paid orders cannot be canceled
 
 ### Product
 
-- ✅ Validação de estoque antes de reduzir
-- ✅ Produto deve estar ativo e com estoque para estar disponível
+* ✅ Stock validation before decrementing inventory
+* ✅ Product must be active and in stock to be available
 
 ### Payment
 
-- ✅ Só pode aprovar pagamentos `PENDING`
+* ✅ Only `PENDING` payments can be approved
 
-### Recomendação (Redis)
+### Recommendation (Redis)
 
-- ✅ Visualizações gravadas em SETs bidirecionais com TTL
-- ✅ Sugestões priorizam co-visualização entre clientes
-- ✅ Fallback para catálogo quando não há sinal no Redis
+* ✅ Views stored in bidirectional Redis SETs with TTL
+* ✅ Recommendations prioritize customer co-viewing behavior
+* ✅ Catalog fallback when Redis lacks sufficient signals
 
-## 🛠️ Tecnologias
+## 🛠️ Technologies
 
-- Java 17
-- Spring Boot 3.2.0
-- Spring Data JPA
-- **Spring Data Redis**
-- **Redis 7**
-- PostgreSQL 15
-- Flyway (migrations)
-- Lombok
-- Maven
+* Java 17
+* Spring Boot 3.2.0
+* Spring Data JPA
+* Spring Data Redis
+* Redis 7
+* PostgreSQL 15
+* Flyway (database migrations)
+* Lombok
+* Maven
 
-## 📝 Próximos Passos
+## 📝 Next Steps
 
-1. ✅ Estrutura multi-módulo
-2. ✅ Schemas separados
-3. ✅ Flyway como fonte única
-4. ✅ Recomendações com Redis
-5. ⏳ Grafana + Prometheus (observabilidade)
-6. ⏳ Implementar eventos de domínio
-7. ⏳ Migrar para WebFlux (não bloqueante)
-8. ⏳ Extrair para microsserviços
+1. ✅ Modular monolith structure
+2. ✅ Separate schemas
+3. ✅ Flyway as the single source of truth
+4. ✅ Redis-based recommendations
+5. ⏳ Grafana + Prometheus (observability)
+6. ⏳ Implement domain events
+7. ⏳ Migrate to WebFlux (non-blocking)
+8. ⏳ Extract services into microservices
 
-## 📚 Documentação
+## 📚 Documentation
 
-- `docs/ARQUITETURA.md` - Explicação detalhada da arquitetura
-- `docs/COMUNICACAO_MODULOS.md` - Como os módulos se comunicam
-- `docs/GUIA_RAPIDO.md` - Guia rápido de testes
+* `docs/ARCHITECTURE.md` — Detailed architecture explanation
+* `docs/MODULE_COMMUNICATION.md` — How modules communicate
+* `docs/QUICK_START.md` — Quick testing guide
